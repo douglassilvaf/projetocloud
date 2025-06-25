@@ -322,33 +322,155 @@ def deletar_obra(id):
 def criar_exposicao():
     dados = request.get_json()
 
-    if not dados or not all(k in dados for k in ('nome', 'data_inicio')):
+    if not dados or not 'nome' in dados or not 'data_inicio' in dados:
         return jsonify({'mensagem': 'Erro: Nome e data de início são obrigatórios.'}), 400
 
-    # Cria o objeto da exposição com os dados básicos
     nova_exposicao = Exposicao(
         nome=dados['nome'],
         descricao=dados.get('descricao'),
         data_inicio=dados['data_inicio'],
         data_fim=dados.get('data_fim')
     )
+    
+    # Listas para guardar o resultado do processamento das obras
+    obras_adicionadas_info = []
+    erros_obras = []
 
-    # Verifica se foram enviados IDs de obras para associar
     if 'obras_ids' in dados and isinstance(dados['obras_ids'], list):
-        # Itera sobre a lista de IDs de obras
         for obra_id in dados['obras_ids']:
-            # Busca a obra no banco de dados
             obra = ObraDeArte.query.get(obra_id)
-            # Se a obra existir, adiciona à lista de obras da exposição
             if obra:
+                # Adiciona a relação no objeto
                 nova_exposicao.obras.append(obra)
+                # Adiciona a informação da obra na lista para o relatório
+                obras_adicionadas_info.append(obra.to_dict_simple())
+            else:
+                # Se a obra não for encontrada, registra o erro
+                erros_obras.append({'obra_id': obra_id, 'erro': 'Obra de arte não encontrada.'})
 
-    # Adiciona a nova exposição (com as obras já vinculadas) à sessão
     db.session.add(nova_exposicao)
-    # Salva no banco. SQLAlchemy irá inserir na tabela 'exposicao' e na 'exposicao_obras'.
     db.session.commit()
+    
+    # Monta a resposta final
+    resposta = {
+        'id': nova_exposicao.id,
+        'nome': nova_exposicao.nome,
+        'descricao': nova_exposicao.descricao,
+        'data_inicio': nova_exposicao.data_inicio.isoformat(),
+        'data_fim': nova_exposicao.data_fim.isoformat() if nova_exposicao.data_fim else None,
+        'obras': obras_adicionadas_info
+    }
 
-    return jsonify({'mensagem': 'Exposição criada com sucesso!', 'exposicao': nova_exposicao.to_dict()}), 201
+    mensagem_final = "Exposição criada com sucesso."
+    if erros_obras:
+        mensagem_final += " Algumas obras não foram encontradas."
+        resposta['avisos'] = erros_obras
+    
+    return jsonify({'mensagem': mensagem_final, 'exposicao': resposta}), 201
+
+# ROTA PARA LISTAR TODAS AS EXPOSIÇÕES
+@app.route('/exposicoes', methods=['GET'])
+def get_exposicoes():
+    exposicoes = Exposicao.query.all()
+    return jsonify([exposicao.to_dict() for exposicao in exposicoes]), 200
+
+# ROTA PARA BUSCAR UMA EXPOSIÇÃO ESPECÍFICA PELO ID
+@app.route('/exposicoes/<int:id>', methods=['GET'])
+def get_exposicao_por_id(id):
+    exposicao = Exposicao.query.get_or_404(id)
+    return jsonify(exposicao.to_dict()), 200
+
+# ROTA PARA ATUALIZAR UMA EXPOSIÇÃO EXISTENTE
+@app.route('/exposicoes/<int:id>', methods=['PUT'])
+def update_exposicao(id):
+    exposicao = Exposicao.query.get_or_404(id)
+    dados = request.get_json()
+
+    # Atualiza os campos básicos da exposição
+    exposicao.nome = dados.get('nome', exposicao.nome)
+    exposicao.descricao = dados.get('descricao', exposicao.descricao)
+    exposicao.data_inicio = dados.get('data_inicio', exposicao.data_inicio)
+    exposicao.data_fim = dados.get('data_fim', exposicao.data_fim)
+
+    # Lógica para atualizar a lista de obras participantes
+    if 'obras_ids' in dados:
+        # Limpa a lista atual de obras
+        exposicao.obras.clear()
+        # Adiciona as novas obras a partir da lista de IDs fornecida
+        for obra_id in dados['obras_ids']:
+            obra = ObraDeArte.query.get(obra_id)
+            if obra:
+                exposicao.obras.append(obra)
+
+    db.session.commit()
+    return jsonify({'mensagem': 'Exposição atualizada com sucesso!', 'exposicao': exposicao.to_dict()}), 200
+
+# ROTA PARA DELETAR UMA EXPOSIÇÃO
+@app.route('/exposicoes/<int:id>', methods=['DELETE'])
+def delete_exposicao(id):
+    exposicao = Exposicao.query.get_or_404(id)
+    
+    # SQLAlchemy cuidará de remover as associações na tabela exposicao_obras
+    db.session.delete(exposicao)
+    db.session.commit()
+    
+    # Retorna uma resposta vazia com status 204 No Content, como é a convenção
+    return '', 204
+
+# --- ROTAS DE BUSCA ---
+
+# ROTA PARA BUSCAR ARTISTAS POR NOME
+@app.route('/artistas/buscar', methods=['GET'])
+def buscar_artistas():
+    # Pega o parâmetro 'nome' da URL (ex: /artistas/buscar?nome=Vinci)
+    nome_artista = request.args.get('nome', '')
+    
+    # Se nenhum nome for fornecido, retorna uma lista vazia ou um erro.
+    if not nome_artista:
+        return jsonify({'mensagem': 'Parâmetro de busca "nome" é obrigatório.'}), 400
+
+    # O operador '%' é um coringa, então '%{nome_artista}%' busca o termo em qualquer parte do nome.
+    termo_busca = f"%{nome_artista}%"
+    artistas_encontrados = Artista.query.filter(Artista.nome.ilike(termo_busca)).all()
+
+    if not artistas_encontrados:
+        return jsonify({'mensagem': 'Nenhum artista encontrado com este nome.'}), 404
+
+    return jsonify([artista.to_dict() for artista in artistas_encontrados]), 200
+
+# ROTA PARA BUSCAR OBRAS POR TÍTULO
+@app.route('/obras/buscar', methods=['GET'])
+def buscar_obras():
+    titulo_obra = request.args.get('titulo', '')
+    
+    if not titulo_obra:
+        return jsonify({'mensagem': 'Parâmetro de busca "titulo" é obrigatório.'}), 400
+        
+    termo_busca = f"%{titulo_obra}%"
+    obras_encontradas = ObraDeArte.query.filter(ObraDeArte.titulo.ilike(termo_busca)).all()
+
+    if not obras_encontradas:
+        return jsonify({'mensagem': 'Nenhuma obra encontrada com este título.'}), 404
+
+    return jsonify([obra.to_dict() for obra in obras_encontradas]), 200
+
+# ROTA PARA BUSCAR EXPOSIÇÕES POR NOME
+@app.route('/exposicoes/buscar', methods=['GET'])
+def buscar_exposicoes():
+    nome_exposicao = request.args.get('nome', '')
+
+    if not nome_exposicao:
+        return jsonify({'mensagem': 'Parâmetro de busca "nome" é obrigatório.'}), 400
+
+    termo_busca = f"%{nome_exposicao}%"
+    exposicoes_encontradas = Exposicao.query.filter(Exposicao.nome.ilike(termo_busca)).all()
+
+    if not exposicoes_encontradas:
+        return jsonify({'mensagem': 'Nenhuma exposição encontrada com este nome.'}), 404
+
+    return jsonify([exposicao.to_dict() for exposicao in exposicoes_encontradas]), 200
+
+# ... (if __name__ == '__main__':)
 
 # --- EXECUÇÃO DA APLICAÇÃO ---
 
