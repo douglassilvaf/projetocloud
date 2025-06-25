@@ -460,7 +460,7 @@ def buscar_exposicoes():
     nome_exposicao = request.args.get('nome', '')
 
     if not nome_exposicao:
-        return jsonify({'mensagem': 'Parâmetro de busca "nome" é obrigatório.'}), 400
+        return jsonify({'mensagem': 'Parâmetro de busca "nome" é necessario.'}), 400
 
     termo_busca = f"%{nome_exposicao}%"
     exposicoes_encontradas = Exposicao.query.filter(Exposicao.nome.ilike(termo_busca)).all()
