@@ -7,7 +7,6 @@ from sqlalchemy import Date
 # --- CONFIGURAÇÃO DA APLICAÇÃO E BANCO DE DADOS ---
 
 app = Flask(__name__)
-
 # Pega o caminho absoluto da pasta onde o app.py está.
 # Isso garante que o caminho para o certificado funcione em qualquer computador.
 basedir = os.path.abspath(os.path.dirname(__file__))
@@ -32,15 +31,12 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 # Inicializa a extensão SQLAlchemy
 db = SQLAlchemy(app)
-
-
 # --- MODELOS (REPRESENTAÇÃO DAS TABELAS DO BANCO DE DADOS) ---
 
 exposicao_obras = db.Table('exposicao_obras',
     db.Column('exposicao_id', db.Integer, db.ForeignKey('exposicao.id'), primary_key=True),
     db.Column('obra_id', db.Integer, db.ForeignKey('obra_de_arte.id'), primary_key=True)
 )
-
 # ... (classe ObraDeArte) ...
 
 class Exposicao(db.Model):
