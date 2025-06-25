@@ -470,8 +470,6 @@ def buscar_exposicoes():
 
     return jsonify([exposicao.to_dict() for exposicao in exposicoes_encontradas]), 200
 
-# ... (if __name__ == '__main__':)
-
 # --- EXECUÇÃO DA APLICAÇÃO ---
 
 if __name__ == '__main__':
